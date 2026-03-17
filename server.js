@@ -655,11 +655,24 @@ Examples:
   // ─── Tool: materio_get_subject_overview ────────────────────────────────────
   // ... (existing tool registrations) ...
 
-  // 🛡️ Accessibility: Add a manual execution method for non-MCP-native clients (like ChatGPT)
+  // 🛡️ Accessibility: Manual methods for non-MCP-native clients (like ChatGPT/Remote Bridge)
   server.executeToolManual = async (name, args) => {
     const tool = server._registeredTools[name];
     if (!tool) throw new Error(`Tool "${name}" not found`);
     return await tool.handler(args);
+  };
+
+  server.listToolsManual = async () => {
+    const tools = [];
+    for (const [name, tool] of Object.entries(server._registeredTools)) {
+      tools.push({
+        name,
+        title: tool.title,
+        description: tool.description,
+        inputSchema: tool.inputSchema
+      });
+    }
+    return { tools };
   };
 
   return server;

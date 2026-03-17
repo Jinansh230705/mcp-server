@@ -10,7 +10,7 @@
   "scripts": {
     "start": "node index.js",
     "dev": "node index.js",
-    "setup:claude": "node scripts/setup-claude.js"
+    "setup:claude": "node scripts/claude.js"
   },
   "engines": {
     "node": ">=18"

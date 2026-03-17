@@ -75,7 +75,7 @@ export default async function handler(req, res) {
 
       if (method === "tools/list") {
         try {
-          const result = await server.listTools();
+          const result = await server.listToolsManual();
           res.status(200).json({
             jsonrpc: "2.0",
             result,
