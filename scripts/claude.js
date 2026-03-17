@@ -13,7 +13,7 @@ import path from 'path';
 import os from 'os';
 
 const SERVER_NAME = "materio";
-const REMOTE_URL = "https://materioa.vercel.app/api/mcp";
+const REMOTE_URL = process.env.MATERIO_MCP_URL || "https://materiomcp.vercel.app/api/mcp";
 const ANIMATION_SPEED = 50;
 
 // ANSI color codes

@@ -655,6 +655,69 @@ Examples:
   // ─── Tool: materio_get_subject_overview ────────────────────────────────────
   // ... (existing tool registrations) ...
 
+  // Convert Zod schemas to plain JSON Schema so remote clients can render tools.
+  function zodToJsonSchema(schema) {
+    if (!schema || !schema._def) {
+      return { type: "string" };
+    }
+
+    const typeName = schema._def.typeName;
+
+    if (typeName === "ZodString") {
+      const out = { type: "string" };
+      if (schema.description) out.description = schema.description;
+      return out;
+    }
+
+    if (typeName === "ZodNumber") {
+      const out = { type: "number" };
+      if (schema.description) out.description = schema.description;
+      return out;
+    }
+
+    if (typeName === "ZodBoolean") {
+      const out = { type: "boolean" };
+      if (schema.description) out.description = schema.description;
+      return out;
+    }
+
+    if (typeName === "ZodOptional" || typeName === "ZodDefault") {
+      return zodToJsonSchema(schema._def.innerType || schema._def.type);
+    }
+
+    if (typeName === "ZodObject") {
+      const shape = typeof schema._def.shape === "function"
+        ? schema._def.shape()
+        : schema._def.shape || {};
+
+      const properties = {};
+      const required = [];
+
+      for (const [key, value] of Object.entries(shape)) {
+        const valueType = value?._def?.typeName;
+        const isOptional = valueType === "ZodOptional" || valueType === "ZodDefault";
+        const baseSchema = isOptional ? (value._def.innerType || value._def.type) : value;
+
+        properties[key] = zodToJsonSchema(baseSchema);
+        if (value?.description && !properties[key].description) {
+          properties[key].description = value.description;
+        }
+
+        if (!isOptional) required.push(key);
+      }
+
+      const out = {
+        type: "object",
+        properties,
+        additionalProperties: false,
+      };
+      if (required.length > 0) out.required = required;
+      return out;
+    }
+
+    return { type: "string" };
+  }
+
   // 🛡️ Accessibility: Manual methods for non-MCP-native clients (like ChatGPT/Remote Bridge)
   server.executeToolManual = async (name, args) => {
     const tool = server._registeredTools[name];
@@ -665,11 +728,15 @@ Examples:
   server.listToolsManual = async () => {
     const tools = [];
     for (const [name, tool] of Object.entries(server._registeredTools)) {
+      const inputSchema = tool.inputSchema?._def
+        ? zodToJsonSchema(tool.inputSchema)
+        : (tool.inputSchema || { type: "object", properties: {}, additionalProperties: false });
+
       tools.push({
         name,
         title: tool.title,
         description: tool.description,
-        inputSchema: tool.inputSchema
+        inputSchema
       });
     }
     return { tools };
