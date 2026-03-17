@@ -3,6 +3,9 @@
   "version": 2,
   "routes": [
     {
+      "handle": "filesystem"
+    },
+    {
       "src": "/mcp",
       "dest": "/api/mcp.js"
     },
