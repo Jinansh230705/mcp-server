@@ -50,6 +50,14 @@ export default async function handler(req, res) {
 
   // ─── POST: Handle MCP requests ─────────────────────────────────────────
   if (req.method === "POST") {
+    // 🛡️ ChatGPT Compatibility Patch:
+    // The MCP SDK is extremely strict and requires 'text/event-stream' in the Accept header.
+    // ChatGPT only sends 'application/json', so we force the header here to avoid
+    // the "Not Acceptable" (406) error while still allowing standard JSON-RPC responses.
+    if (!req.headers.accept || !req.headers.accept.includes("text/event-stream")) {
+      req.headers.accept = "application/json, text/event-stream";
+    }
+
     try {
       const server = createServer();
 
