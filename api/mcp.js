@@ -55,8 +55,8 @@ export default async function handler(req, res) {
         status: "ok",
         transport: "streamable-http",
         endpoint: "/api/mcp",
-        logo: "/logo.png",
-        icon: "/logo.svg",
+        logo: "/favicon.png",
+        icon: "/favicon.png",
         usage: "Send MCP JSON-RPC requests via POST to this endpoint."
       });
       return;

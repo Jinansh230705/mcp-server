@@ -6,6 +6,10 @@
       "handle": "filesystem"
     },
     {
+      "src": "/favicon.ico",
+      "dest": "/favicon.png"
+    },
+    {
       "src": "/mcp",
       "dest": "/api/mcp.js"
     },
