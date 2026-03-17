@@ -50,51 +50,48 @@ export default async function handler(req, res) {
 
   // ─── POST: Handle MCP requests ─────────────────────────────────────────
   if (req.method === "POST") {
-    // 🛡️ Super-Patch: Use a Proxy to guarantee the headers are present.
-    // This ensures even if the SDK reads headers in a weird way, it gets the right values.
-    const patchedReq = new Proxy(req, {
-      get(target, prop) {
-        if (prop === 'headers') {
-          return {
-            ...target.headers,
-            'accept': 'application/json, text/event-stream',
-            'content-type': target.headers['content-type'] || 'application/json'
-          };
-        }
-        return Reflect.get(target, prop);
-      }
-    });
-
     try {
       const server = createServer();
+      const { method, params, id } = req.body;
 
-      // Stateless transport — no session tracking, returns JSON responses
+      // 🛡️ Universal Handler: Manual execution for tools/call
+      // This bypasses the SDK's transport layer which is overly strict about HTTP headers.
+      if (method === "tools/call") {
+        try {
+          const result = await server.executeToolManual(params.name, params.arguments);
+          res.status(200).json({
+            jsonrpc: "2.0",
+            result,
+            id
+          });
+        } catch (toolError) {
+          res.status(200).json({
+            jsonrpc: "2.0",
+            error: { code: -32603, message: toolError.message },
+            id
+          });
+        } finally {
+          // Explicit cleanup to prevent Windows-specific handle assertions
+          try { await server.close(); } catch (e) {}
+        }
+        return;
+      }
+
+      // ─── Native MCP Fallback: For clients that ARE MCP aware ─────────────
       const transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: undefined,  // Stateless: no session IDs
-        enableJsonResponse: true         // Return JSON instead of SSE streams
+        sessionIdGenerator: undefined,
+        enableJsonResponse: true
       });
-
-      // Clean up transport when response closes
-      res.on("close", () => {
-        transport.close();
-        server.close();
-      });
-
+      
       await server.connect(transport);
-      await transport.handleRequest(patchedReq, res, req.body);
+      await transport.handleRequest(req, res, req.body);
     } catch (error) {
       console.error("MCP handler error:", error);
-
-      if (!res.headersSent) {
-        res.status(500).json({
-          jsonrpc: "2.0",
-          error: {
-            code: -32603,
-            message: "Internal server error"
-          },
-          id: null
-        });
-      }
+      res.status(500).json({
+        jsonrpc: "2.0",
+        error: { code: -32603, message: "Internal server error" },
+        id: req.body?.id || null
+      });
     }
     return;
   }
