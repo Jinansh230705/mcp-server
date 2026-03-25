@@ -1,5 +1,5 @@
 .vercel
 .env*.local
 node_modules
-scripts/*.sql
+schemas/*.sql
 AGENTS.md

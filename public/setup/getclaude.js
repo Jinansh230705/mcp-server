@@ -13,7 +13,7 @@ import path from 'path';
 import os from 'os';
 
 const SERVER_NAME = "materio";
-const REMOTE_URL = process.env.MATERIO_MCP_URL || "https://materiomcp.vercel.app/mcp";
+const REMOTE_URL = "https://materiomcp.vercel.app/mcp";
 const ANIMATION_SPEED = 50;
 
 // ANSI color codes
@@ -47,8 +47,8 @@ async function printHeader() {
   clearScreen();
   console.log(`${colors.cyan}${colors.bright}`);
   console.log('╔════════════════════════════════════════════════════════════════╗');
-  console.log('║                  MATERIO MCP SETUP UTILITY                      ║');
-  console.log('║              Claude Desktop Integration v1.0                    ║');
+  console.log('║                  MATERIO MCP SETUP UTILITY                     ║');
+  console.log('║              Claude Desktop Integration v1.0                   ║');
   console.log('╚════════════════════════════════════════════════════════════════╝');
   console.log(colors.reset);
   await sleep(400);
@@ -214,7 +214,7 @@ async function setup() {
     console.log(`  3. Look for the connection indicator to access Materio tools`);
     console.log();
 
-    console.log(`${colors.dim}For support, visit: https://materioa.vercel.app${colors.reset}\n`);
+    console.log(`${colors.dim}For support, visit: https://materio.vercel.app/support${colors.reset}\n`);
 
   } catch (err) {
     await printProgress(4, 4, 'Setup complete');
