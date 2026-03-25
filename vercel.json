@@ -10,6 +10,14 @@
       "dest": "/favicon.png"
     },
     {
+      "src": "/",
+      "dest": "/api/mcp.js"
+    },
+    {
+      "src": "/api/mcp/(.*)",
+      "dest": "/api/mcp.js"
+    },
+    {
       "src": "/mcp",
       "dest": "/api/mcp.js"
     },

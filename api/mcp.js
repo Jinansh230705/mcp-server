@@ -20,7 +20,7 @@ import { createServer } from "../server.js";
  *  - OPTIONS /api/mcp → CORS preflight
  */
 export default async function handler(req, res) {
-  // 🛡️ MCP Safety Guard: Suppress all console output to prevent pollution.
+  //  MCP Safety Guard: Suppress all console output to prevent pollution.
   // This prevents libraries (like pdf-parse) from polluting responses with 
   // warnings/logs/info/debug, which would break the MCP JSON-RPC protocol.
   // Only apply this once per request, not for every tool call.
@@ -28,7 +28,7 @@ export default async function handler(req, res) {
   const originalWarn = console.warn;
   const originalInfo = console.info;
   const originalDebug = console.debug;
-  
+
   console.log = console.warn = console.info = console.debug = (...args) => {
     // Silently discard or redirect to console.error if debugging is needed
     // For now, just suppress to keep responses clean
@@ -68,8 +68,11 @@ export default async function handler(req, res) {
         const server = createServer();
         const { method, params, id } = req.body;
 
-        // 🛡️ Universal Handler: Manual execution for initialize, tools/list, and tools/call
-        if (method === "initialize") {
+        //  Universal Handler: Manual execution for initialize, tools/list, and tools/call
+        const isRestfulChatGPT = req.url && req.url.includes('/api/mcp/') && req.url.split('/api/mcp/')[1];
+        const effectiveMethod = isRestfulChatGPT ? "tools/call" : method;
+
+        if (effectiveMethod === "initialize") {
           res.status(200).json({
             jsonrpc: "2.0",
             id,
@@ -89,7 +92,7 @@ export default async function handler(req, res) {
           return;
         }
 
-        if (method === "tools/list") {
+        if (effectiveMethod === "tools/list") {
           try {
             const result = await server.listToolsManual();
             res.status(200).json({
@@ -100,21 +103,29 @@ export default async function handler(req, res) {
           } catch (e) {
             res.status(500).json({ error: e.message });
           } finally {
-            try { await server.close(); } catch (e) {}
+            try { await server.close(); } catch (e) { }
           }
           return;
         }
 
-        if (method === "tools/call") {
+        if (effectiveMethod === "tools/call") {
           try {
-            // 🛡️ Argument Resolver:
+            //  Argument Resolver:
             // ChatGPT sometimes sends arguments nested in 'params.arguments', 
-            // but sometimes sends them directly in 'params'. This handles both.
-            const toolName = params?.name;
-            const toolArgs = params?.arguments || (params ? { ...params } : {});
+            // but sometimes sends them directly in 'params' or 'req.body'.
+            const toolName = params?.name || (req.url && req.url.split('/api/mcp/')[1]?.split('?')[0]);
             
-            // Clean up toolArgs so we don't pass 'name' as an argument to the tool
+            // If RESTful ChatGPT, args are the entire body (or params if nested)
+            let rawArgs = req.body;
+            if (params) rawArgs = params.arguments || params;
+            
+            const toolArgs = { ...rawArgs };
+            
+            // Clean up toolArgs so we don't pass system keys
             if (toolArgs.name) delete toolArgs.name;
+            if (toolArgs.method) delete toolArgs.method;
+            if (toolArgs.id) delete toolArgs.id;
+            if (toolArgs.params) delete toolArgs.params;
 
             const result = await server.executeToolManual(toolName, toolArgs);
             res.status(200).json({
@@ -130,7 +141,7 @@ export default async function handler(req, res) {
             });
           } finally {
             // Explicit cleanup to prevent Windows-specific handle assertions
-            try { await server.close(); } catch (e) {}
+            try { await server.close(); } catch (e) { }
           }
           return;
         }
@@ -139,8 +150,8 @@ export default async function handler(req, res) {
         // For any other MCP method not handled above, return error
         res.status(200).json({
           jsonrpc: "2.0",
-          error: { 
-            code: -32601, 
+          error: {
+            code: -32601,
             message: `Method '${method}' is not supported by this MCP server`
           },
           id

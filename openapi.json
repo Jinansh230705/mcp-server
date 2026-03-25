@@ -2,15 +2,43 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Materio MCP",
-    "description": "Professional access to the Materio document library and semantic knowledge base. Features priority semantic search (RAG) and direct document retrieval.",
-    "version": "2.1.1"
+    "version": "2.1.2"
   },
   "paths": {
-    "/search": {
+    "/api/mcp/list_resources": {
       "post": {
-        "summary": "Step 1: Perform semantic RAG search across the Materio library.",
-        "description": "Primary tool for answering user questions. Returns relevant text chunks with source metadata.",
-        "operationId": "search",
+        "summary": "List Materio Resources",
+        "description": "List all available educational resources in the Materio library.\n\nReturns a structured overview of all semesters, subjects, resource categories, and topics available.\nUse this to discover what PDFs are available before fetching a specific one.\n\nOptionally filter by semester number to narrow results.\n\nArgs:\n  - semester (string, optional): Filter by semester number (e.g. \"1\", \"2\", \"3\", \"4\", \"5\", \"6\"). Omit to list all semesters.\n\nReturns:\n  A formatted markdown listing of all available resources organized by semester > subject > category > topics.\n\nExamples:\n  - \"What subjects are in semester 3?\" → params: { semester: \"3\" }\n  - \"Show me all resources\" → params: {}\n  - \"What's available for semester 5?\" → params: { semester: \"5\" }",
+        "operationId": "list_resources",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "semester": {
+                    "type": "string",
+                    "description": "Filter by semester number, e.g. '1', '2', '3'. Omit to list all."
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/mcp/get_resource": {
+      "post": {
+        "summary": "Search Materio Resources",
+        "description": "Search across all Materio educational PDFs by keyword.\n\nSearches through semester numbers, subject names, category types (Chapters, Assignments, Question Banks, etc.), and topic names to find matching resources.\n\nArgs:\n  - query (string): Search keywords to match, e.g. \"operating system deadlocks\", \"maths laplace\", \"java inheritance\", \"question bank\", \"semester 4\". Multiple words narrow the search.\n  - limit (number, optional): Maximum number of results to return (default: 20, max: 50).\n\nReturns:\n  A list of matching resources with semester, subject, category, topic name, and the CDN URL for each PDF.\n\nExamples:\n  - \"Find notes on deadlocks\" → params: { query: \"deadlocks\" }\n  - \"Question banks for semester 4\" → params: { query: \"question bank semester 4\" }\n  - \"Java chapters\" → params: { query: \"java chapters\" }\n  - \"DBMS SQL\" → params: { query: \"dbms sql\" }\n  - \"Maths Laplace Transform\" → params: { query: \"laplace transform\" }",
+        "operationId": "get_resource",
         "requestBody": {
           "required": true,
           "content": {
@@ -20,19 +48,14 @@
                 "properties": {
                   "query": {
                     "type": "string",
-                    "description": "The natural language question."
-                  },
-                  "semester": {
-                    "type": "string"
-                  },
-                  "subject": {
-                    "type": "string"
+                    "description": "Search keywords to match against subjects, topics, and categories"
                   },
                   "limit": {
-                    "type": "integer",
-                    "default": 5
+                    "type": "number",
+                    "description": "Maximum number of results to return (default: 20)"
                   }
                 },
+                "additionalProperties": false,
                 "required": [
                   "query"
                 ]
@@ -42,15 +65,15 @@
         },
         "responses": {
           "200": {
-            "description": "Returns relevant chunks and source info."
+            "description": "Success"
           }
         }
       }
     },
-    "/fetch_pdf": {
+    "/api/mcp/fetch_pdf": {
       "post": {
-        "summary": "Step 2: Fallback direct document fetch.",
-        "description": "Retrieves raw content if semantic search results are insufficient or if the user requests a deep dive into a specific PDF.",
+        "summary": "Get Materio PDF Content",
+        "description": "Fetch and read the full text content of a Materio PDF.\n\nDownloads the PDF from the Materio CDN and extracts its text content so you can read and reason over it.\nUse this after searching/browsing to retrieve the actual study material.\n\nYou can provide EITHER a direct PDF URL (from a search result) OR the semester + subject + topic combination.\n\nIMPORTANT: This tool is designed to help users study. When answering questions based on PDF content:\n- Use the PDF's own terminology and definitions\n- Cover all relevant points as expected in university exams\n- Structure answers clearly with proper headings\n- Include examples from the material when available\n\nArgs:\n  - url (string, optional): Direct CDN URL of the PDF. If provided, semester/subject/topic are ignored.\n  - semester (string, optional): Semester number (e.g. \"1\", \"2\", \"3\", \"4\", \"5\", \"6\"). Required if url is not provided.\n  - subject (string, optional): Subject name exactly as listed in the resource library. Required if url is not provided.\n  - topic (string, optional): Topic name exactly as listed in the resource library. Required if url is not provided.\n\nReturns:\n  The full extracted text content of the PDF, which may be long. The AI can then use this to answer questions.\n\nExamples:\n  - Fetch by URL: { url: \"https://cdn-materioa.vercel.app/pdfs/4/Operating%20System/Deadlocks.pdf\" }\n  - Fetch by path: { semester: \"4\", subject: \"Operating System\", topic: \"Deadlocks\" }\n  - Fetch by path: { semester: \"3\", subject: \"Object Oriented Programming with Java\", topic: \"Inheritance\" }",
         "operationId": "fetch_pdf",
         "requestBody": {
           "required": true,
@@ -59,89 +82,39 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "url": {
+                    "type": "string",
+                    "description": "Direct CDN URL of the PDF. Takes priority over semester/subject/topic."
+                  },
                   "semester": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "Semester number, e.g. '1', '2', '3', '4', '5', '6'."
                   },
                   "subject": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "Subject name exactly as listed in the resource library."
                   },
                   "topic": {
-                    "type": "string"
-                  },
-                  "filetype": {
                     "type": "string",
-                    "enum": [
-                      "pdf",
-                      "docx"
-                    ],
-                    "default": "pdf"
+                    "description": "Topic name exactly as listed in the resource library."
                   }
                 },
-                "required": [
-                  "semester",
-                  "subject",
-                  "topic"
-                ]
+                "additionalProperties": false
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Returns raw status and size."
+            "description": "Success"
           }
         }
       }
     },
-    "/get_resource": {
-      "get": {
-        "summary": "Search the library file tree for study materials by name.",
-        "operationId": "get_resource",
-        "parameters": [
-          {
-            "name": "keyword",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "semester",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "subject",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Returns a list of matching resources."
-          }
-        }
-      }
-    },
-    "/list_resources": {
-      "get": {
-        "summary": "Get an overview of available semesters and subjects.",
-        "operationId": "list_resources",
-        "responses": {
-          "200": {
-            "description": "Returns a JSON hierarchy of the library."
-          }
-        }
-      }
-    },
-    "/share_link": {
+    "/api/mcp/share_link": {
       "post": {
-        "summary": "Generate a masked share link for any raw URL.",
+        "summary": "Generate Secure Share Link",
+        "description": "Get a professional masked share link for a Materio PDF.\n      \nThis returns a secure URL (e.g., materias.vercel.app/?share=...) that opens the PDF beautifully in the Materio viewer. Use this when finalizing a study session or providing resources to the user.\n\nTakes EITHER a raw CDN 'url' OR 'semester, subject, topic'.",
         "operationId": "share_link",
         "requestBody": {
           "required": true,
@@ -151,11 +124,59 @@
                 "type": "object",
                 "properties": {
                   "url": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "The raw CDN URL to mask"
+                  },
+                  "semester": {
+                    "type": "string",
+                    "description": "Semester number (1-6)"
+                  },
+                  "subject": {
+                    "type": "string",
+                    "description": "Subject name exactly as listed"
+                  },
+                  "topic": {
+                    "type": "string",
+                    "description": "Topic name exactly as listed"
                   }
                 },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        }
+      }
+    },
+    "/api/mcp/subject_overview": {
+      "post": {
+        "summary": "Get Subject Overview",
+        "description": "Get a complete overview of all available resources for a specific subject.\n\nShows all categories (Chapters, Assignments, Question Banks, Previous Year Papers, etc.) and their topics for the given subject. Useful for understanding the full scope of available material before diving into specific topics.\n\nArgs:\n  - semester (string): Semester number (e.g. \"1\", \"2\", \"3\", \"4\", \"5\", \"6\").\n  - subject (string): Subject name exactly as listed in the resource library.\n\nReturns:\n  A detailed listing of all resource categories and topics for the subject, with PDF URLs for each.\n\nExamples:\n  - { semester: \"4\", subject: \"Operating System\" }\n  - { semester: \"2\", subject: \"Maths-2\" }\n  - { semester: \"3\", subject: \"Database Management Systems\" }",
+        "operationId": "subject_overview",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "semester": {
+                    "type": "string",
+                    "description": "Semester number, e.g. '1', '2', '3', '4', '5', '6'."
+                  },
+                  "subject": {
+                    "type": "string",
+                    "description": "Subject name exactly as listed in the resource library."
+                  }
+                },
+                "additionalProperties": false,
                 "required": [
-                  "url"
+                  "semester",
+                  "subject"
                 ]
               }
             }
@@ -163,7 +184,7 @@
         },
         "responses": {
           "200": {
-            "description": "Returns a masked share link string."
+            "description": "Success"
           }
         }
       }
