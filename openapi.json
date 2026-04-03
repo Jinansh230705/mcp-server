@@ -2,7 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Materio MCP",
-    "version": "2.1.2"
+    "version": "2.1.2",
+    "description": "Academic resource retrieval server for the Materio educational platform. Provides semantic vector search, keyword browse, full PDF extraction, and secure share-link generation across all indexed university study materials."
   },
   "servers": [
     {
@@ -11,6 +12,48 @@
     }
   ],
   "paths": {
+    "/api/mcp/search": {
+      "post": {
+        "summary": "Semantic Vector Search (RAG) — use this first",
+        "description": "PRIORITY 1. Performs a semantic vector search across the pre-indexed Materio document library using Google Gemini embeddings. Returns the most relevant extracted text chunks with similarity scores, source subject, topic, page range, and a direct PDF URL. Always call this tool first when answering a specific question about study material. Fall back to fetch_pdf only when this returns no results or when the full document context is needed. Optionally filter by semester (e.g. '4') or subject (e.g. 'Operating System') to narrow results. The query should be a precise academic phrase rather than a broad keyword.",
+        "operationId": "search",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "query": {
+                    "type": "string",
+                    "description": "The precise academic question, concept, or topic to search for. Example: 'banker algorithm deadlock avoidance' or 'normalisation third normal form database'."
+                  },
+                  "semester": {
+                    "type": "string",
+                    "description": "Optional. Filter results to a specific semester number, e.g. '4' or '6'."
+                  },
+                  "subject": {
+                    "type": "string",
+                    "description": "Optional. Filter results to a specific subject name exactly as it appears in the library, e.g. 'Operating System' or 'Database Management Systems'."
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "description": "Optional. Number of chunks to return. Default is 5; maximum is 15."
+                  }
+                },
+                "additionalProperties": false,
+                "required": ["query"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Ranked text chunks with similarity percentages, source metadata, and PDF links."
+          }
+        }
+      }
+    },
     "/api/mcp/list_resources": {
       "post": {
         "summary": "List Materio Resources",
@@ -42,8 +85,8 @@
     },
     "/api/mcp/get_resource": {
       "post": {
-        "summary": "Search Materio Resources",
-        "description": "Search across all Materio PDFs by keyword (like 'deadlocks', 'java'). Searches semesters, subjects, and topics. Takes 'query' (required) and 'limit' (optional). Keep queries broad to find robust results.",
+        "summary": "Keyword Search Materio Resources",
+        "description": "Search across all Materio PDFs by keyword (e.g. 'deadlocks', 'java'). Searches semester numbers, subjects, categories, and topic names. Takes 'query' (required) and 'limit' (optional, default 20). Use this when the semantic search tool returns no results or when browsing for available documents rather than answering a specific question. Keep queries broad for better recall.",
         "operationId": "get_resource",
         "requestBody": {
           "required": true,
@@ -54,17 +97,15 @@
                 "properties": {
                   "query": {
                     "type": "string",
-                    "description": "Search keywords to match against subjects, topics, and categories"
+                    "description": "Search keywords to match against subjects, topics, and categories."
                   },
                   "limit": {
                     "type": "number",
-                    "description": "Maximum number of results to return (default: 20)"
+                    "description": "Maximum number of results to return (default: 20)."
                   }
                 },
                 "additionalProperties": false,
-                "required": [
-                  "query"
-                ]
+                "required": ["query"]
               }
             }
           }
@@ -79,7 +120,7 @@
     "/api/mcp/fetch_pdf": {
       "post": {
         "summary": "Get Materio PDF Content",
-        "description": "Fetch and read the full text content of a PDF. Provide EITHER a direct CDN 'url' (from get_resource) OR all three of 'semester, subject, topic'. Do NOT hallucinate parameters. Always cover university-level exam context.",
+        "description": "Fetch and read the full text content of a PDF. Provide EITHER a direct CDN 'url' (from get_resource or search) OR all three of 'semester', 'subject', 'topic'. Do NOT hallucinate parameters. Use this only when the semantic search (search) tool did not return sufficient context, or when a comprehensive reading of the full document is explicitly required.",
         "operationId": "fetch_pdf",
         "requestBody": {
           "required": true,
@@ -120,7 +161,7 @@
     "/api/mcp/share_link": {
       "post": {
         "summary": "Generate Secure Share Link",
-        "description": "Get a masked share link to open a PDF in the Materio native viewer beautifully. Takes EITHER a raw CDN 'url' (takes priority) OR 'semester, subject, topic'.",
+        "description": "Get a masked share link to open a PDF in the Materio native viewer. Takes EITHER a raw CDN 'url' (takes priority) OR 'semester, subject, topic'.",
         "operationId": "share_link",
         "requestBody": {
           "required": true,
@@ -131,19 +172,19 @@
                 "properties": {
                   "url": {
                     "type": "string",
-                    "description": "The raw CDN URL to mask"
+                    "description": "The raw CDN URL to mask."
                   },
                   "semester": {
                     "type": "string",
-                    "description": "Semester number (1-6)"
+                    "description": "Semester number (1-6)."
                   },
                   "subject": {
                     "type": "string",
-                    "description": "Subject name exactly as listed"
+                    "description": "Subject name exactly as listed."
                   },
                   "topic": {
                     "type": "string",
-                    "description": "Topic name exactly as listed"
+                    "description": "Topic name exactly as listed."
                   }
                 },
                 "additionalProperties": false
@@ -161,7 +202,7 @@
     "/api/mcp/subject_overview": {
       "post": {
         "summary": "Get Subject Overview",
-        "description": "Get a complete overview of all available resources (Chapters, Banks, Assignments) for a specific subject string and semester number. Requires 'semester' and 'subject'.",
+        "description": "Get a complete overview of all available resources (Chapters, Question Banks, Assignments, Previous Year Papers) for a specific subject and semester. Requires both 'semester' and 'subject'.",
         "operationId": "subject_overview",
         "requestBody": {
           "required": true,
@@ -180,10 +221,7 @@
                   }
                 },
                 "additionalProperties": false,
-                "required": [
-                  "semester",
-                  "subject"
-                ]
+                "required": ["semester", "subject"]
               }
             }
           }

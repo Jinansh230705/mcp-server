@@ -3,3 +3,7 @@
 node_modules
 schemas/*.sql
 AGENTS.md
+*.mjs
+*.txt
+*.log
+.DS_Store

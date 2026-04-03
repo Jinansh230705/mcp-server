@@ -28,8 +28,8 @@ const CDN_BASE = "https://cdn-materioa.vercel.app";
 const RESOURCE_LIB_URL = `${CDN_BASE}/databases/beta/resource.lib.json`;
 const CHARACTER_LIMIT = 80000;
 
-const ENABLE_RAG = process.env.ENABLE_RAG === "true";
-const PPLX_API_URL = "https://api.perplexity.ai/v1/contextualizedembeddings";
+const ENABLE_RAG = process.env.ENABLE_RAG !== "false";
+const GEMINI_EMBED_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2-preview:embedContent";
 
 const supabase = createClient(
   process.env.SUPABASE_URL || "https://supabase-placeholder",
@@ -136,6 +136,128 @@ export function createServer() {
     name: "materio-mcp",
     version: "2.1.2"
   });
+
+  // ─── Tool: search (Semantic RAG Vector Search) ───────────────────────
+  if (ENABLE_RAG) {
+    server.registerTool(
+      "search",
+      {
+        title: "Semantic Vector Search",
+        description: `PRIORITY 1 — Semantic search across the pre-indexed Materio document library.
+
+Uses Google Gemini (gemini-embedding-2-preview) to match your question against extracted textbook chunks stored in a vector database.
+Always call this first before attempting fetch_pdf. Returns the most relevant text passages with similarity scores and source page references.
+
+Args:
+  - query (string): The specific question, concept, or topic to search for. Be precise — e.g. "deadlock detection algorithm" not just "deadlock".
+  - semester (string, optional): Filter results to a specific semester (e.g. "4").
+  - subject (string, optional): Filter results to a specific subject (e.g. "Operating System").
+  - limit (number, optional): Number of results to return (default: 5, max: 15).
+
+Returns:
+  Ranked text chunks with similarity %, subject, topic, page range, and a direct PDF link for further reading.
+
+Examples:
+  - "Explain banker's algorithm" → params: { query: "banker algorithm deadlock avoidance" }
+  - "OS deadlocks semester 4" → params: { query: "deadlock", semester: "4", subject: "Operating System" }`,
+        inputSchema: {
+          query: z.string().min(1).max(500).describe("The specific question, topic, or concept to semantically search for."),
+          semester: z.string().optional().describe("Optional: filter to a specific semester number, e.g. '4'."),
+          subject: z.string().optional().describe("Optional: filter to a specific subject name, e.g. 'Operating System'."),
+          limit: z.number().int().min(1).max(15).default(5).optional().describe("Number of results to return (default: 5).")
+        },
+        annotations: {
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: false
+        }
+      },
+      async ({ query, semester, subject, limit = 5 }) => {
+        try {
+          const apiKey = process.env.GOOGLE_API_KEY;
+          if (!apiKey) throw new Error("GOOGLE_API_KEY environment variable is not set.");
+
+          // text-embedding-004 with exponential backoff (handles free-tier rate limits)
+          let vector;
+          const maxRetries = 3;
+          for (let attempt = 0; attempt < maxRetries; attempt++) {
+            const geminiRes = await fetch(`${GEMINI_EMBED_URL}?key=${apiKey}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                model: "models/gemini-embedding-2-preview",
+                content: { parts: [{ text: query }] },
+                taskType: "RETRIEVAL_QUERY",
+                outputDimensionality: 1024
+              })
+            });
+
+            if (geminiRes.status === 429) {
+              if (attempt < maxRetries - 1) {
+                await new Promise(r => setTimeout(r, (attempt + 1) * 1500));
+                continue;
+              }
+              throw new Error("Gemini API rate limit exceeded. Please retry in a moment.");
+            }
+            if (!geminiRes.ok) {
+              const errBody = await geminiRes.text();
+              throw new Error(`Gemini Embedding API error ${geminiRes.status}: ${errBody}`);
+            }
+            const geminiData = await geminiRes.json();
+            vector = geminiData?.embedding?.values;
+            if (!vector || !vector.length) throw new Error("Gemini returned an empty embedding vector.");
+            break;
+          }
+
+          const { data, error } = await supabase.rpc("match_materio_chunks", {
+            query_embedding: vector,
+            match_count: limit,
+            filter_semester: semester || null,
+            filter_subject: subject || null,
+            similarity_threshold: 0.25
+          });
+
+          if (error) throw error;
+          if (!data || data.length === 0) {
+            return {
+              content: [{
+                type: "text",
+                text: `No relevant content found in the vector index for: "${query}".\n\nSuggestions:\n- Broaden your search terms\n- Try without semester/subject filters\n- Fall back to get_resource + fetch_pdf`
+              }]
+            };
+          }
+
+          const lines = [`# Semantic Search Results for "${query}"\n`, `Found ${data.length} relevant chunk(s).\n`, "---\n"];
+          for (const item of data) {
+            const semLabel = item.semester === "9999" ? "Vault" : `Semester ${item.semester}`;
+            const pageRef = (item.page_start && item.page_end)
+              ? ` (pp. ${item.page_start}–${item.page_end})`
+              : item.page_start ? ` (p. ${item.page_start})` : "";
+            const pdfRef = item.pdf_url ? `\n  **Source PDF:** ${item.pdf_url}` : "";
+            
+            // Handle similarity display gracefully
+            const rawSim = parseFloat(item.similarity);
+            const simScore = isNaN(rawSim) ? 0 : Math.round(rawSim * 100);
+            
+            lines.push(`### [${simScore}% match] ${item.subject} — ${item.topic}${pageRef}`);
+            lines.push(`*${semLabel} · ${item.category || "General"}*${pdfRef}\n`);
+            lines.push(item.chunk_text);
+            lines.push("\n---\n");
+          }
+
+          return { 
+            content: [
+              { type: "text", text: lines.join("\n") },
+              { type: "text", text: JSON.stringify({ results: data.map(d => ({ ...d, embedding: undefined })) }, null, 2) }
+            ] 
+          };
+        } catch (error) {
+          return { isError: true, content: [{ type: "text", text: `Semantic search error: ${error.message}` }] };
+        }
+      }
+    );
+  }
 
   // ─── Tool: list_resources ────────────────────────────────────────────────
   server.registerTool(
@@ -303,53 +425,6 @@ Examples:
       }
     }
   );
-
-  // ─── Tool: search (Semantic RAG Vector Search) ───────────────────────────
-  if (ENABLE_RAG) {
-    server.registerTool(
-      "search",
-      {
-        title: "Semantic Vector Search",
-        description: `Priority 1: Semantic search across the indexed document library. 
-        
-Returns relevant chunks of extracted text directly from the AI embedding database.
-Use this as your primary tool for answering highly specific textbook questions without needing to download the entire PDF.`,
-        inputSchema: {
-          query: z.string().describe("The specific question, topic, or content to semantically search for."),
-          semester: z.string().optional().describe("Optional semester filter."),
-          subject: z.string().optional().describe("Optional subject filter."),
-          limit: z.number().default(5).optional()
-        }
-      },
-      async ({ query, semester, subject, limit = 5 }) => {
-        try {
-          const pplxRes = await fetch(PPLX_API_URL, {
-            method: "POST",
-            headers: { "Authorization": `Bearer ${process.env.PERPLEXITY_API_KEY}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ model: "pplx-embed-context-v1-0.6b", input: [query] })
-          });
-          if (!pplxRes.ok) throw new Error(`Perplexity API Error: ${pplxRes.status}`);
-          const vector = (await pplxRes.json()).data[0].embedding;
-
-          const { data, error } = await supabase.rpc("match_materio_chunks", {
-            query_embedding: vector,
-            match_count: limit,
-            filter_semester: semester || null,
-            filter_subject: subject || null,
-            similarity_threshold: 0.3
-          });
-
-          if (error) throw error;
-          if (!data || data.length === 0) return { content: [{ type: "text", text: "No relevant content found in the semantic vector index. Try get_resource." }] };
-
-          const chunks = data.map(item => `[Similarity: ${Math.round(item.similarity * 100)}%] ${item.subject} / ${item.topic}: ${item.chunk_text}`).join("\n\n");
-          return { content: [{ type: "text", text: chunks }] };
-        } catch (error) {
-          return { isError: true, content: [{ type: "text", text: `Semantic search error: ${error.message}` }] };
-        }
-      }
-    );
-  }
 
   // ─── Tool: fetch_pdf ───────────────────────────────────────────────────────
   server.registerTool(
