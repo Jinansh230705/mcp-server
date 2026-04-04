@@ -53,33 +53,29 @@ export default async function handler(req, res) {
       return;
     }
 
-    // ─── GET: Meta-Identity Page (Fixes crawler status errors) ───────────
+    // ─── GET: Validation JSON payload (favicon exposed via headers) ──────
     if (req.method === "GET") {
-      res.status(200).send(`
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Materio MCP | Unified Education API</title>
-          <link rel="icon" href="data:image/x-icon;base64,AAABAAEAEBAAAAEAIABoBAAAFgAAACgAAAAQAAAAIAAAAAEAIAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMzMzADMzMwAzMzMAMzMzADMzMwAzMzMAMzMzADMzMwAzMzMAMzMzADMzMwAzMzMAMzMzADMzMwAAMzMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A">
-          <style>
-            body { background: #0c0c0c; color: #fff; font-family: -apple-system, system-ui, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; }
-            .card { background: #1a1a1a; padding: 2.5rem; border-radius: 20px; border: 1px solid #333; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border-top: 4px solid #00c6ff; }
-            h1 { margin: 0; font-size: 1.5rem; letter-spacing: -0.5px; }
-            p { opacity: 0.6; font-size: 0.9rem; margin-top: 0.5rem; }
-            .tag { display: inline-block; background: #222; border: 1px solid #444; padding: 4px 12px; border-radius: 20px; font-size: 0.7rem; color: #00c6ff; margin-top: 1rem; text-transform: uppercase; letter-spacing: 1px; }
-          </style>
-        </head>
-        <body>
-          <div class="card">
-            <h1>Materio MCP Server</h1>
-            <p>Active and Secure. Ready for Protocol Handshake.</p>
-            <div class="tag">Status: 200 OK</div>
-          </div>
-        </body>
-        </html>
-      `);
+      const host = req.headers.host || "materiomcp.vercel.app";
+      const protocol = req.headers["x-forwarded-proto"] || "https";
+      const baseUrl = `${protocol}://${host}`;
+      const docsUrl = "https://materioa.vercel.app/docs/mcp";
+      const faviconUrl = `${baseUrl}/favicon.png`;
+
+      res.setHeader("X-Robots-Tag", "index, follow");
+      res.setHeader("Link", `<${faviconUrl}>; rel=\"icon\"; type=\"image/png\"`);
+      res.status(200).json({
+        status: "ok",
+        service: "materio-mcp-server",
+        version: "1.0.0",
+        endpoint: `${baseUrl}/api/mcp`,
+        docs: docsUrl,
+        endpoints: {
+          health: { method: "GET", path: "/api/mcp" },
+          mcp: { method: "POST", path: "/api/mcp" },
+          preflight: { method: "OPTIONS", path: "/api/mcp" },
+          robots: { method: "GET", path: "/robots.txt" }
+        }
+      });
       return;
     }
 
@@ -192,12 +188,11 @@ export default async function handler(req, res) {
         });
         return;
       } catch (error) {
-        // Use original console.error for logging errors
-        originalLog("MCP handler error:", error);
-        res.status(500).json({
-          jsonrpc: "2.0",
-          error: { code: -32603, message: "Internal server error" },
-          id: req.body?.id || null
+        console.error("MCP Execution Error:", error);
+        return res.status(200).json({
+          isError: true,
+          content: [{ type: "text", text: `Protocol execution failure: ${error.message}` }],
+          _debug: { status: 200, message: "Response forced to 200 OK for fetcher compatibility." }
         });
       }
       return;
