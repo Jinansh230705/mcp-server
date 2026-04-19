@@ -715,6 +715,44 @@ Examples:
   return server;
 }
 
+// Vercel may resolve this file as a serverless entrypoint in some deployments.
+// Provide a valid default handler to prevent "Invalid export" runtime failures.
+export default async function vercelCompatibilityHandler(req, res) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+  if (req.method === "OPTIONS") {
+    res.status(204).end();
+    return;
+  }
+
+  if (req.method === "GET") {
+    const host = req?.headers?.host || "materiomcp.vercel.app";
+    const protocol = req?.headers?.["x-forwarded-proto"] || "https";
+    const baseUrl = `${protocol}://${host}`;
+
+    res.status(200).json({
+      status: "ok",
+      service: "materio-mcp-server",
+      endpoint: `${baseUrl}/api/mcp`,
+      message: "Use /api/mcp for MCP requests"
+    });
+    return;
+  }
+
+  if (req.method === "POST") {
+    res.status(307);
+    res.setHeader("Location", "/api/mcp");
+    res.end();
+    return;
+  }
+
+  res.status(405).json({
+    error: "Method not allowed. Use POST for MCP requests, GET for server info."
+  });
+}
+
 // ─── Local Execution Only ────────────────────────────────────────────────────
 const isMainModule = typeof process !== "undefined" && process.argv && process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
 
